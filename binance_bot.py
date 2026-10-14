@@ -308,5 +308,4 @@ def monitor_binance_trading():
         time.sleep(60)
 
 if __name__ == "__main__":
-    monitor_binManager = monitor_binance_trading()
     monitor_binance_trading()
