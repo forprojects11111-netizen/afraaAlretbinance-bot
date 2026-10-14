@@ -37,7 +37,6 @@ def parse_float_input(text):
     return float(cleaned)
 
 def get_live_price(symbol):
-    # استخدام عدة بدائل لرابط بايننس لضمان عدم فشل الاتصال على Render
     urls = [
         f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
         f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
@@ -64,8 +63,8 @@ tracked_symbols = {
 
 user_states = {}
 temp_coin_data = {}
-base_prices = {}     # سعر الأساس
-current_prices = {}  # السعر الحالي المحدث بالخلفية
+base_prices = {}
+current_prices = {}
 
 
 # --- 4. دالة بناء أزرار العملات ---
@@ -188,11 +187,8 @@ def check_telegram_updates():
                         elif data.startswith("checkprice_"):
                             symbol = data.replace("checkprice_", "")
                             if symbol in tracked_symbols:
-                                # جلب السعر المباشر مع محددات بديلة
-                                cur_p = current_prices.get(symbol, 0.0)
-                                if cur_p == 0.0:
-                                    cur_p = get_live_price(symbol)
-                                    current_prices[symbol] = cur_p
+                                cur_p = get_live_price(symbol)
+                                current_prices[symbol] = cur_p
                                 
                                 if symbol not in base_prices or base_prices[symbol] == 0.0:
                                     base_prices[symbol] = cur_p
