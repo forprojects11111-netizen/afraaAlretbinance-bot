@@ -36,6 +36,15 @@ def parse_float_input(text):
     cleaned = text.replace("%", "").replace("−", "-").strip()
     return float(cleaned)
 
+def get_live_price(symbol):
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+        res = requests.get(url, timeout=5).json()
+        return float(res.get('price', 0))
+    except Exception as e:
+        print(f"Error fetching price for {symbol}: {e}")
+        return 0.0
+
 
 # --- 3. بيانات العملات الديناميكية ---
 tracked_symbols = {
@@ -105,6 +114,7 @@ def check_telegram_updates():
                                 buy_val = temp_coin_data["buy_drop"]
                                 
                                 tracked_symbols[symbol] = {"buy_drop": buy_val, "sell_rise": sell_val}
+                                base_prices[symbol] = get_live_price(symbol)
                                 user_states[CHAT_ID] = None
                                 
                                 send_telegram_message(
@@ -165,30 +175,31 @@ def check_telegram_updates():
                         elif data.startswith("checkprice_"):
                             symbol = data.replace("checkprice_", "")
                             if symbol in tracked_symbols:
-                                try:
-                                    api_url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-                                    res = requests.get(api_url).json()
-                                    current_price = float(res.get('price', 0))
-                                    conf = tracked_symbols[symbol]
-                                    
-                                    base_p = base_prices.get(symbol)
-                                    change_str = "غير محدد بعد"
-                                    if base_p and base_p > 0:
-                                        change = ((current_price - base_p) / base_p) * 100
-                                        sign = "+" if change >= 0 else ""
-                                        change_str = f"`{sign}{change:.2f}%`"
-                                    
-                                    msg = (
-                                        f"🪙 **تقرير العملة اللحظي: `{symbol}`**\n\n"
-                                        f"• السعر الحالي: `{current_price}` USDT\n"
-                                        f"• سعر الأساس: `{base_p if base_p else 'قيد التعيين'}`\n"
-                                        f"• نسبة التغير اللحظية: {change_str}\n\n"
-                                        f"🎯 **النسب المحددة للمراقبة:**\n"
-                                        f"• تنبيه الشراء: `-{conf['buy_drop']}%`\n"
-                                        f"• تنبيه البيع: `+{conf['sell_rise']}%`"
-                                    )
-                                except Exception:
-                                    msg = f"❌ تعذر جلب سعر `{symbol}` حالياً من منصة بايننس."
+                                current_price = get_live_price(symbol)
+                                conf = tracked_symbols[symbol]
+                                
+                                # تعيين سعر الأساس فوراً إذا لم يكن مسجلاً
+                                if symbol not in base_prices or not base_prices[symbol]:
+                                    base_prices[symbol] = current_price
+                                
+                                base_p = base_prices[symbol]
+                                
+                                if current_price > 0 and base_p > 0:
+                                    change = ((current_price - base_p) / base_p) * 100
+                                    sign = "+" if change >= 0 else ""
+                                    change_str = f"`{sign}{change:.2f}%`"
+                                else:
+                                    change_str = "`0.00%`"
+                                
+                                msg = (
+                                    f"🪙 **تقرير العملة اللحظي: `{symbol}`**\n\n"
+                                    f"• السعر الحالي: `{current_price}` USDT\n"
+                                    f"• سعر الأساس: `{base_p}` USDT\n"
+                                    f"• نسبة التغير اللحظية: {change_str}\n\n"
+                                    f"🎯 **النسب المحددة للمراقبة:**\n"
+                                    f"• تنبيه الشراء: `-{conf['buy_drop']}%`\n"
+                                    f"• تنبيه البيع: `+{conf['sell_rise']}%`"
+                                )
                                 
                                 keyboard = {"inline_keyboard": [[{"text": "🔙 اختر عملة أخرى", "callback_data": "price_check_menu"}, {"text": "🏠 الرئيسية", "callback_data": "main_menu"}]]}
                                 send_telegram_message(msg, reply_markup=keyboard)
@@ -258,9 +269,7 @@ def monitor_binance_trading():
         
         for symbol in current_symbols:
             try:
-                api_url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-                res = requests.get(api_url).json()
-                current_price = float(res.get('price', 0))
+                current_price = get_live_price(symbol)
                 
                 if current_price == 0:
                     continue
