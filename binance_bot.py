@@ -36,15 +36,6 @@ def parse_float_input(text):
     cleaned = text.replace("%", "").replace("−", "-").strip()
     return float(cleaned)
 
-def get_live_price(symbol):
-    try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-        res = requests.get(url, timeout=5).json()
-        return float(res.get('price', 0))
-    except Exception as e:
-        print(f"Error fetching price for {symbol}: {e}")
-        return 0.0
-
 
 # --- 3. بيانات العملات الديناميكية ---
 tracked_symbols = {
@@ -54,7 +45,8 @@ tracked_symbols = {
 
 user_states = {}
 temp_coin_data = {}
-base_prices = {}
+current_prices = {}  # حفظ آخر سعر تم جلبه من حلقة المراقبة
+base_prices = {}     # سعر الأساس
 
 
 # --- 4. دالة بناء أزرار العملات ---
@@ -70,7 +62,7 @@ def get_coins_management_keyboard(action_type):
 
 # --- 5. معالج أوامر تليجرام والأزرار ---
 def check_telegram_updates():
-    global tracked_symbols, user_states, temp_coin_data, base_prices
+    global tracked_symbols, user_states, temp_coin_data, current_prices, base_prices
     last_update_id = 0
     
     while True:
@@ -114,7 +106,6 @@ def check_telegram_updates():
                                 buy_val = temp_coin_data["buy_drop"]
                                 
                                 tracked_symbols[symbol] = {"buy_drop": buy_val, "sell_rise": sell_val}
-                                base_prices[symbol] = get_live_price(symbol)
                                 user_states[CHAT_ID] = None
                                 
                                 send_telegram_message(
@@ -175,25 +166,19 @@ def check_telegram_updates():
                         elif data.startswith("checkprice_"):
                             symbol = data.replace("checkprice_", "")
                             if symbol in tracked_symbols:
-                                current_price = get_live_price(symbol)
+                                cur_p = current_prices.get(symbol, 0.0)
+                                base_p = base_prices.get(symbol, 0.0)
                                 conf = tracked_symbols[symbol]
                                 
-                                # تعيين سعر الأساس فوراً إذا لم يكن مسجلاً
-                                if symbol not in base_prices or not base_prices[symbol]:
-                                    base_prices[symbol] = current_price
-                                
-                                base_p = base_prices[symbol]
-                                
-                                if current_price > 0 and base_p > 0:
-                                    change = ((current_price - base_p) / base_p) * 100
+                                change_str = "غير محدد بعد"
+                                if cur_p > 0 and base_p > 0:
+                                    change = ((cur_p - base_p) / base_p) * 100
                                     sign = "+" if change >= 0 else ""
                                     change_str = f"`{sign}{change:.2f}%`"
-                                else:
-                                    change_str = "`0.00%`"
                                 
                                 msg = (
                                     f"🪙 **تقرير العملة اللحظي: `{symbol}`**\n\n"
-                                    f"• السعر الحالي: `{current_price}` USDT\n"
+                                    f"• السعر الحالي: `{cur_p}` USDT\n"
                                     f"• سعر الأساس: `{base_p}` USDT\n"
                                     f"• نسبة التغير اللحظية: {change_str}\n\n"
                                     f"🎯 **النسب المحددة للمراقبة:**\n"
@@ -233,6 +218,8 @@ def check_telegram_updates():
                                 del tracked_symbols[symbol]
                                 if symbol in base_prices:
                                     del base_prices[symbol]
+                                if symbol in current_prices:
+                                    del current_prices[symbol]
                                 send_telegram_message(f"🗑️ تم حذف العملة `{symbol}` بنجاح.")
                                 send_main_menu()
 
@@ -261,7 +248,7 @@ threading.Thread(target=check_telegram_updates, daemon=True).start()
 
 # --- 6. منطق المراقبة المستمرة ---
 def monitor_binance_trading():
-    global base_prices
+    global base_prices, current_prices
     print("Binance full-management strategy monitor started...")
     
     while True:
@@ -269,12 +256,17 @@ def monitor_binance_trading():
         
         for symbol in current_symbols:
             try:
-                current_price = get_live_price(symbol)
+                api_url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+                res = requests.get(api_url, timeout=5).json()
+                current_price = float(res.get('price', 0))
                 
                 if current_price == 0:
                     continue
                 
-                if symbol not in base_prices or base_prices[symbol] is None:
+                # تحديث السعر الحالي في الذاكرة دائماً
+                current_prices[symbol] = current_price
+                
+                if symbol not in base_prices or base_prices[symbol] is None or base_prices[symbol] == 0:
                     base_prices[symbol] = current_price
                     continue
                 
@@ -316,4 +308,5 @@ def monitor_binance_trading():
         time.sleep(60)
 
 if __name__ == "__main__":
+    monitor_binManager = monitor_binance_trading()
     monitor_binance_trading()
