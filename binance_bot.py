@@ -1,36 +1,32 @@
+import os
 import time
-import traceback
 import requests
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
-TELEGRAM_BOT_TOKEN = "8979107331:AAEu-Wj3yT9k098z7T6w7z4..."  # توكن البوت الخاص بك
-CHAT_ID = "7841120409"  # معرف الشات الخاص بك
+# --- خادم الويب الوهمي لترضية منصة Render وضمان عمل البوت 24/7 ---
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
 
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(f"خطأ في إرسال التنبيه: {e}")
+def run_web_server():
+    server = HTTPServer(('0.0.0.0', 10000), SimpleHandler)
+    server.serve_forever()
 
-def run_bot():
-    print("🚀 جاري تشغيل بوت مراقبة بايننس بنجاح...")
-    send_telegram_message("🤖 **مرحباً مهندسة!** تم تشغيل بوت مراقبة بايننس بنجاح على السيرفر السحابي وتفعيل الإشعارات الدائمة.")
-    
+# تشغيل خادم الويب في الخلفية بشكل آلي
+threading.Thread(target=run_web_server, daemon=True).start()
+
+
+# --- المنطق الأساسي لبوت بايننس ---
+# (يمكنكِ إكمال وتعديل كود التداول الخاص بكِ هنا كالمعتاد)
+
+def main():
+    print("Bot is starting...")
     while True:
-        # هنا يتم وضع فحص الأسواق والتنبيهات المستمرة
+        # ضعِ منطق البوت الخاص بك هنا
         time.sleep(60)
 
 if __name__ == "__main__":
-    while True:
-        try:
-            run_bot()
-        except Exception as e:
-            print(f"⚠️ حدث خطأ: {e}")
-            traceback.print_exc()
-            print("🔄 جاري إعادة تشغيل النظام تلقائياً...")
-            time.sleep(10)
+    main()
