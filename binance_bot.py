@@ -18,7 +18,7 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 
-# --- 2. إعدادات تليجرام الخاصة بكِ ---
+# --- 2. إعدادات تليجرام ---
 TOKEN = "8979107331:AAHMrQci5lt-FdDj-8SQr6GDYTxob1nmX1o"
 CHAT_ID = "7841120409"
 
@@ -32,19 +32,23 @@ def send_telegram_message(text, reply_markup=None):
     except Exception as e:
         print(f"Error sending message: {e}")
 
+def parse_float_input(text):
+    cleaned = text.replace("%", "").replace("−", "-").strip()
+    return float(cleaned)
 
-# --- 3. بيانات العملات وقوائمها الديناميكية ---
+
+# --- 3. بيانات العملات الديناميكية ---
 tracked_symbols = {
     "BTCUSDT": {"buy_drop": 5.0, "sell_rise": 2.0},
     "ETHUSDT": {"buy_drop": 5.0, "sell_rise": 2.0}
 }
 
-# حالات المحادثة لإدارة العملات (إضافة أو تعديل)
 user_states = {}
 temp_coin_data = {}
+base_prices = {}
 
 
-# --- 4. دالة بناء أزرار قائمة العملات للتعديل أو الحذف ---
+# --- 4. دالة بناء أزرار العملات ---
 def get_coins_management_keyboard(action_type):
     keyboard = {"inline_keyboard": []}
     for symbol in tracked_symbols.keys():
@@ -55,9 +59,9 @@ def get_coins_management_keyboard(action_type):
     return keyboard
 
 
-# --- 5. معالج أوامر تليجرام والأزرار التفاعلية ---
+# --- 5. معالج أوامر تليجرام والأزرار ---
 def check_telegram_updates():
-    global tracked_symbols, user_states, temp_coin_data
+    global tracked_symbols, user_states, temp_coin_data, base_prices
     last_update_id = 0
     
     while True:
@@ -68,7 +72,6 @@ def check_telegram_updates():
                 for update in res["result"]:
                     last_update_id = update["update_id"]
                     
-                    # 1. التعامل مع الرسائل النصية ومدخلات المستخدم
                     if "message" in update:
                         message = update["message"]
                         text = message.get("text", "").strip()
@@ -78,27 +81,26 @@ def check_telegram_updates():
                             user_states[CHAT_ID] = None
                             send_main_menu()
                         
-                        # --- حالات إضافة عملة جديدة ---
                         elif current_state == "waiting_for_symbol":
                             symbol = text.upper()
                             if not symbol.endswith("USDT"):
                                 symbol += "USDT"
                             temp_coin_data["symbol"] = symbol
                             user_states[CHAT_ID] = "waiting_for_buy_drop"
-                            send_telegram_message(f"✅ تم استقبال العملة: `{symbol}`\n\nالرجاء إدخال **نسبة هبوط الشراء** الجديدة (مثلاً: `5` أو `7`):")
+                            send_telegram_message(f"✅ تم استقبال العملة: `{symbol}`\n\nالرجاء إدخال **نسبة هبوط الشراء** (مثل: `5`):")
                         
                         elif current_state == "waiting_for_buy_drop":
                             try:
-                                buy_val = float(text)
+                                buy_val = abs(parse_float_input(text))
                                 temp_coin_data["buy_drop"] = buy_val
                                 user_states[CHAT_ID] = "waiting_for_sell_rise"
-                                send_telegram_message(f"✅ نسبة الهبوط للشراء: `{buy_val}%`.\n\nالآن أُكتبي **نسبة صعود البيع/جني الأرباح** (مثلاً: `2` أو `3`):")
+                                send_telegram_message(f"✅ نسبة الهبوط للشراء: `{buy_val}%`.\n\nالآن أُكتبي **نسبة صعود البيع** (مثل: `2`):")
                             except ValueError:
-                                send_telegram_message("❌ الرجاء إدخال رقم صحيح بالنسبة المئوية (مثل 5 أو 2):")
+                                send_telegram_message("❌ الرجاء إدخال رقم صحيح:")
                         
                         elif current_state == "waiting_for_sell_rise":
                             try:
-                                sell_val = float(text)
+                                sell_val = abs(parse_float_input(text))
                                 symbol = temp_coin_data["symbol"]
                                 buy_val = temp_coin_data["buy_drop"]
                                 
@@ -113,12 +115,11 @@ def check_telegram_updates():
                                 )
                                 send_main_menu()
                             except ValueError:
-                                send_telegram_message("❌ الرجاء إدخال رقم صحيح بالنسبة المئوية:")
+                                send_telegram_message("❌ الرجاء إدخال رقم صحيح:")
 
-                        # --- حالات تعديل نسب عملة موجودة ---
                         elif current_state == "waiting_for_edit_buy":
                             try:
-                                buy_val = float(text)
+                                buy_val = abs(parse_float_input(text))
                                 temp_coin_data["buy_drop"] = buy_val
                                 user_states[CHAT_ID] = "waiting_for_edit_sell"
                                 symbol = temp_coin_data["symbol"]
@@ -128,7 +129,7 @@ def check_telegram_updates():
 
                         elif current_state == "waiting_for_edit_sell":
                             try:
-                                sell_val = float(text)
+                                sell_val = abs(parse_float_input(text))
                                 symbol = temp_coin_data["symbol"]
                                 buy_val = temp_coin_data["buy_drop"]
                                 
@@ -145,7 +146,6 @@ def check_telegram_updates():
                             except ValueError:
                                 send_telegram_message("❌ الرجاء إدخال رقم صحيح:")
 
-                    # 2. التعامل مع ضغطات الأزرار التفاعلية (Inline Keyboards)
                     elif "callback_query" in update:
                         callback = update["callback_query"]
                         data = callback.get("data", "")
@@ -156,7 +156,42 @@ def check_telegram_updates():
                         
                         elif data == "add_coin":
                             user_states[CHAT_ID] = "waiting_for_symbol"
-                            send_telegram_message("➕ **إضافة عملة جديدة**\n\nأُكتبي رمز العملة (مثلاً: `SOL` أو `BNB`):")
+                            send_telegram_message("➕ **إضافة عملة جديدة**\n\nأُكتبي رمز العملة (مثلاً: `SOL` أو `DOGE`):")
+                        
+                        elif data == "price_check_menu":
+                            kb = get_coins_management_keyboard("checkprice")
+                            send_telegram_message("📈 **اختر العملة لمعرفة سعرها اللحظي ونسبتها الآن:**", reply_markup=kb)
+                        
+                        elif data.startswith("checkprice_"):
+                            symbol = data.replace("checkprice_", "")
+                            if symbol in tracked_symbols:
+                                try:
+                                    api_url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+                                    res = requests.get(api_url).json()
+                                    current_price = float(res.get('price', 0))
+                                    conf = tracked_symbols[symbol]
+                                    
+                                    base_p = base_prices.get(symbol)
+                                    change_str = "غير محدد بعد"
+                                    if base_p and base_p > 0:
+                                        change = ((current_price - base_p) / base_p) * 100
+                                        sign = "+" if change >= 0 else ""
+                                        change_str = f"`{sign}{change:.2f}%`"
+                                    
+                                    msg = (
+                                        f"🪙 **تقرير العملة اللحظي: `{symbol}`**\n\n"
+                                        f"• السعر الحالي: `{current_price}` USDT\n"
+                                        f"• سعر الأساس: `{base_p if base_p else 'قيد التعيين'}`\n"
+                                        f"• نسبة التغير اللحظية: {change_str}\n\n"
+                                        f"🎯 **النسب المحددة للمراقبة:**\n"
+                                        f"• تنبيه الشراء: `-{conf['buy_drop']}%`\n"
+                                        f"• تنبيه البيع: `+{conf['sell_rise']}%`"
+                                    )
+                                except Exception:
+                                    msg = f"❌ تعذر جلب سعر `{symbol}` حالياً من منصة بايننس."
+                                
+                                keyboard = {"inline_keyboard": [[{"text": "🔙 اختر عملة أخرى", "callback_data": "price_check_menu"}, {"text": "🏠 الرئيسية", "callback_data": "main_menu"}]]}
+                                send_telegram_message(msg, reply_markup=keyboard)
                         
                         elif data == "list_coins":
                             msg = "📋 **العملات التي يتم مراقبتها حالياً:**\n\n"
@@ -167,33 +202,27 @@ def check_telegram_updates():
                             send_telegram_message(msg, reply_markup=keyboard)
                         
                         elif data == "edit_coin_menu":
-                            if not tracked_symbols:
-                                send_telegram_message("⚠️ لا توجد عملات مضافة حالياً للتعديل.")
-                            else:
-                                kb = get_coins_management_keyboard("edit")
-                                send_telegram_message("⚙️ **اختر العملة التي تريدين تعديل نسبها:**", reply_markup=kb)
+                            kb = get_coins_management_keyboard("edit")
+                            send_telegram_message("⚙️ **اختر العملة التي تريدين تعديل نسبها:**", reply_markup=kb)
                         
                         elif data == "delete_coin_menu":
-                            if not tracked_symbols:
-                                send_telegram_message("⚠️ لا توجد عملات مضافة حالياً للحذف.")
-                            else:
-                                kb = get_coins_management_keyboard("delete")
-                                send_telegram_message("🗑️ **اختر العملة التي تريدين حذفها من المراقبة:**", reply_markup=kb)
+                            kb = get_coins_management_keyboard("delete")
+                            send_telegram_message("🗑️ **اختر العملة التي تريدين حذفها:**", reply_markup=kb)
                         
-                        # معالجة اختيار عملة للتعديل
                         elif data.startswith("edit_"):
                             symbol = data.replace("edit_", "")
                             if symbol in tracked_symbols:
                                 temp_coin_data["symbol"] = symbol
                                 user_states[CHAT_ID] = "waiting_for_edit_buy"
-                                send_telegram_message(f"✏️ تعديل نسب العملة: `{symbol}`\n\nالنسبة الحالية للشراء هي `-{tracked_symbols[symbol]['buy_drop']}%`.\nالرجاء إدخال **نسبة هبوط الشراء الجديدة**:")
+                                send_telegram_message(f"✏️ تعديل نسب العملة: `{symbol}`\n\nالرجاء إدخال **نسبة هبوط الشراء الجديدة** (مثل 6):")
                         
-                        # معالجة اختيار عملة للحذف
                         elif data.startswith("delete_"):
                             symbol = data.replace("delete_", "")
                             if symbol in tracked_symbols:
                                 del tracked_symbols[symbol]
-                                send_telegram_message(f"🗑️ تم حذف العملة `{symbol}` بنجاح من قائمة المراقبة.")
+                                if symbol in base_prices:
+                                    del base_prices[symbol]
+                                send_telegram_message(f"🗑️ تم حذف العملة `{symbol}` بنجاح.")
                                 send_main_menu()
 
         except Exception as e:
@@ -203,25 +232,26 @@ def check_telegram_updates():
 def send_main_menu():
     keyboard = {
         "inline_keyboard": [
+            [{"text": "🔍 فحص سعر عملة الآن", "callback_data": "price_check_menu"}],
             [{"text": "➕ إضافة عملة جديدة", "callback_data": "add_coin"}],
-            [{"text": "📋 استعراض العملات والنسب", "callback_data": "list_coins"}],
+            [{"text": "📋 استعراض جميع العملات", "callback_data": "list_coins"}],
             [{"text": "⚙️ تعديل نسب عملة", "callback_data": "edit_coin_menu"}],
             [{"text": "🗑️ حذف عملة", "callback_data": "delete_coin_menu"}]
         ]
     }
     send_telegram_message(
         "🤖 **لوحة تحكم بوت التداول - مهندسة عفراء**\n\n"
-        "اخترِ الإجراء المطلوب من الأزرار أدناه لإدارة العملات ونسب التداول بكل سهولة:",
+        "اخترِ الإجراء المطلوب من الأزرار أدناه:",
         reply_markup=keyboard
     )
 
 threading.Thread(target=check_telegram_updates, daemon=True).start()
 
 
-# --- 6. منطق المراقبة المستمرة لكل العملات والنسب المحدثة ---
+# --- 6. منطق المراقبة المستمرة ---
 def monitor_binance_trading():
+    global base_prices
     print("Binance full-management strategy monitor started...")
-    base_prices = {}
     
     while True:
         current_symbols = list(tracked_symbols.keys())
@@ -247,7 +277,6 @@ def monitor_binance_trading():
                 
                 price_change_percent = ((current_price - base_price) / base_price) * 100
                 
-                # 1. حالة الهبوط (تنبيه شراء)
                 if price_change_percent <= -buy_drop_limit:
                     msg = (
                         f"🚨 **تنبيه شراء (فرصة دخول)**\n\n"
@@ -260,7 +289,6 @@ def monitor_binance_trading():
                     send_telegram_message(msg)
                     base_prices[symbol] = current_price
                 
-                # 2. حالة الصعود (تنبيه بيع جني الأرباح)
                 elif price_change_percent >= sell_rise_limit:
                     msg = (
                         f"💰 **تنبيه بيع / جني الأرباح**\n\n"
