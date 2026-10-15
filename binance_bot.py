@@ -37,15 +37,22 @@ def parse_float_input(text):
     return float(cleaned)
 
 def get_live_price(symbol):
-    # استخدام الرابط المباشر والدقيق لجلب السعر الفوري تماماً مثل التطبيق
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-    try:
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            return float(data.get('price', 0))
-    except Exception:
-        pass
+    # قائمة روابط احتياطية متعددة لضمان عدم فشل جلب السعر أبداً على Render
+    urls = [
+        f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
+        f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
+        f"https://data-api.binance.vision/api/v3/ticker/price?symbol={symbol}"
+    ]
+    for url in urls:
+        try:
+            res = requests.get(url, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                price = float(data.get('price', 0))
+                if price > 0:
+                    return price
+        except Exception:
+            continue
     return 0.0
 
 
@@ -182,7 +189,10 @@ def check_telegram_updates():
                             symbol = data.replace("checkprice_", "")
                             if symbol in tracked_symbols:
                                 cur_p = get_live_price(symbol)
-                                current_prices[symbol] = cur_p
+                                if cur_p > 0:
+                                    current_prices[symbol] = cur_p
+                                else:
+                                    cur_p = current_prices.get(symbol, 0.0)
                                 
                                 if symbol not in base_prices or base_prices[symbol] == 0.0:
                                     base_prices[symbol] = cur_p
