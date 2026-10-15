@@ -19,7 +19,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 
 
 # --- 2. إعدادات تليجرام ---
-TOKEN = "8979107331:AAHMrQci5lt-FdDj-8SQr6GDYTxob1nmX1o"
+TOKEN = "8979107331:AAHMrQci5lt-FdDj-8SQr6GDYTxob1nmX1o"  # ضعِ التوكن الجديد هنا إذا قمتِ بعمله عبر /revoke
 CHAT_ID = "7841120409"
 
 def send_telegram_message(text, reply_markup=None):
@@ -106,7 +106,7 @@ def check_telegram_updates():
                                 symbol += "USDT"
                             temp_coin_data["symbol"] = symbol
                             user_states[CHAT_ID] = "waiting_for_buy_drop"
-                            send_telegram_message(f"✅ تم استقبال العملة: `{symbol}`\n\nالرجاء إدخال **نسبة هبوط الشراء** (مثل: `5`):")
+                            send_telegram_message(f"✅ تم استقبال العملة: `{symbol}`\n\nالرجاء إدخال **نسبة هبوط الشراء** (مثل الزيادة أو النقصان `5`):")
                         
                         elif current_state == "waiting_for_buy_drop":
                             try:
