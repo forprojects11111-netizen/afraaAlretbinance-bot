@@ -36,25 +36,26 @@ def parse_float_input(text):
     cleaned = text.replace("%", "").replace("−", "-").strip()
     return float(cleaned)
 
-def get_live_price(symbol):
-    # جلب السعر الفوري المباشر مع استبعاد التخزين المؤقت تماماً لضمان التطابق اللحظي
+def get_market_data(symbol):
+    # جلب السعر الحالي ونسبة التغير خلال 24 ساعة تماماً مثل التطبيق
     urls = [
-        f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
-        f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
-        f"https://data-api.binance.vision/api/v3/ticker/price?symbol={symbol}"
+        f"https://api1.binance.com/api/v3/ticker/24hr?symbol={symbol}",
+        f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}",
+        f"https://data-api.binance.vision/api/v3/ticker/24hr?symbol={symbol}"
     ]
     headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
     for url in urls:
         try:
-            res = requests.get(url, headers=headers, timeout=2)
+            res = requests.get(url, headers=headers, timeout=3)
             if res.status_code == 200:
                 data = res.json()
-                price = float(data.get('price', 0))
+                price = float(data.get('lastPrice', 0))
+                price_change_percent = float(data.get('priceChangePercent', 0))
                 if price > 0:
-                    return price
+                    return price, price_change_percent
         except Exception:
             continue
-    return 0.0
+    return 0.0, 0.0
 
 
 # --- 3. بيانات العملات الديناميكية ---
@@ -126,7 +127,7 @@ def check_telegram_updates():
                                 buy_val = temp_coin_data["buy_drop"]
                                 
                                 tracked_symbols[symbol] = {"buy_drop": buy_val, "sell_rise": sell_val}
-                                p = get_live_price(symbol)
+                                p, _ = get_market_data(symbol)
                                 base_prices[symbol] = p
                                 current_prices[symbol] = p
                                 user_states[CHAT_ID] = None
@@ -189,7 +190,7 @@ def check_telegram_updates():
                         elif data.startswith("checkprice_"):
                             symbol = data.replace("checkprice_", "")
                             if symbol in tracked_symbols:
-                                cur_p = get_live_price(symbol)
+                                cur_p, official_change = get_market_data(symbol)
                                 if cur_p > 0:
                                     current_prices[symbol] = cur_p
                                 else:
@@ -201,17 +202,14 @@ def check_telegram_updates():
                                 base_p = base_prices[symbol]
                                 conf = tracked_symbols[symbol]
                                 
-                                change_str = "0.00%"
-                                if cur_p > 0 and base_p > 0:
-                                    change = ((cur_p - base_p) / base_p) * 100
-                                    sign = "+" if change >= 0 else ""
-                                    change_str = f"`{sign}{change:.2f}%`"
+                                sign = "+" if official_change >= 0 else ""
+                                change_str = f"`{sign}{official_change:.2f}%`"
                                 
                                 msg = (
                                     f"🪙 **تقرير العملة اللحظي: `{symbol}`**\n\n"
                                     f"• السعر الحالي: `{cur_p}` USDT\n"
                                     f"• سعر الأساس: `{base_p}` USDT\n"
-                                    f"• نسبة التغير اللحظية: {change_str}\n\n"
+                                    f"• نسبة التغير (24 ساعة): {change_str}\n\n"
                                     f"🎯 **النسب المحددة للمراقبة:**\n"
                                     f"• تنبيه الشراء: `-{conf['buy_drop']}%`\n"
                                     f"• تنبيه البيع: `+{conf['sell_rise']}%`"
@@ -287,7 +285,7 @@ def monitor_binance_trading():
         
         for symbol in current_symbols:
             try:
-                current_price = get_live_price(symbol)
+                current_price, price_change_percent = get_market_data(symbol)
                 
                 if current_price == 0:
                     continue
@@ -304,27 +302,28 @@ def monitor_binance_trading():
                 buy_drop_limit = config["buy_drop"]
                 sell_rise_limit = config["sell_rise"]
                 
-                price_change_percent = ((current_price - base_price) / base_price) * 100
+                # استخدام التغير اللحظي الداخلي لتنبيهات الشراء والبيع الخاصة بكِ
+                internal_change_percent = ((current_price - base_price) / base_price) * 100
                 
-                if price_change_percent <= -buy_drop_limit:
+                if internal_change_percent <= -buy_drop_limit:
                     msg = (
                         f"🚨 **تنبيه شراء (فرصة دخول)**\n\n"
                         f"• العملة: `{symbol}`\n"
                         f"• السعر السابق: `{base_price}`\n"
                         f"• السعر الحالي: `{current_price}`\n"
-                        f"• نسبة الهبوط: `{price_change_percent:.2f}%` 🔻\n\n"
+                        f"• نسبة الهبوط: `{internal_change_percent:.2f}%` 🔻\n\n"
                         f"💡 وصلت للحد المستهدَف للشراء برأس مال 20$!"
                     )
                     send_telegram_message(msg)
                     base_prices[symbol] = current_price
                 
-                elif price_change_percent >= sell_rise_limit:
+                elif internal_change_percent >= sell_rise_limit:
                     msg = (
                         f"💰 **تنبيه بيع / جني الأرباح**\n\n"
                         f"• العملة: `{symbol}`\n"
                         f"• سعر الشراء: `{base_price}`\n"
                         f"• السعر الحالي: `{current_price}`\n"
-                        f"• نسبة الصعود: `+{price_change_percent:.2f}%` 🚀\n\n"
+                        f"• نسبة الصعود: `+{internal_change_percent:.2f}%` 🚀\n\n"
                         f"💡 تحققت نسبة الربح المستهدفة للوصول لهدف الـ 2$!"
                     )
                     send_telegram_message(msg)
