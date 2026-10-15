@@ -37,15 +37,16 @@ def parse_float_input(text):
     return float(cleaned)
 
 def get_live_price(symbol):
-    # قائمة روابط احتياطية متعددة لضمان عدم فشل جلب السعر أبداً على Render
+    # استخدام خوادم متعددة ومباشرة مع منع التخزين المؤقت للحصول على أدنى تأخير زمني
     urls = [
-        f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
+        f"https://data-api.binance.vision/api/v3/ticker/price?symbol={symbol}",
         f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
-        f"https://data-api.binance.vision/api/v3/ticker/price?symbol={symbol}"
+        f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}"
     ]
+    headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
     for url in urls:
         try:
-            res = requests.get(url, timeout=5)
+            res = requests.get(url, headers=headers, timeout=3)
             if res.status_code == 200:
                 data = res.json()
                 price = float(data.get('price', 0))
