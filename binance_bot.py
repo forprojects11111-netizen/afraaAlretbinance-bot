@@ -58,10 +58,16 @@ def get_market_data(symbol):
     return 0.0, 0.0
 
 
-# --- 3. بيانات العملات الديناميكية ---
+# --- 3. بيانات العملات ونظام التنبيهات التدريجية ---
 tracked_symbols = {
-    "BTCUSDT": {"buy_drop": 5.0, "sell_rise": 2.0},
-    "ETHUSDT": {"buy_drop": 5.0, "sell_rise": 2.0}
+    "BTCUSDT": {"buy_drop": 5.0, "sell_rise": 10.0},
+    "ETHUSDT": {"buy_drop": 6.0, "sell_rise": 10.0}
+}
+
+# تتبع المراحل التي تم التنبيه بها لكي لا تتكرر
+notified_stages = {
+    "BTCUSDT": {"3": False, "6": False, "10": False},
+    "ETHUSDT": {"3": False, "6": False, "10": False}
 }
 
 user_states = {}
@@ -83,7 +89,7 @@ def get_coins_management_keyboard(action_type):
 
 # --- 5. معالج أوامر تليجرام والأزرار ---
 def check_telegram_updates():
-    global tracked_symbols, user_states, temp_coin_data, base_prices, current_prices
+    global tracked_symbols, user_states, temp_coin_data, base_prices, current_prices, notified_stages
     last_update_id = 0
     
     while True:
@@ -116,7 +122,7 @@ def check_telegram_updates():
                                 buy_val = abs(parse_float_input(text))
                                 temp_coin_data["buy_drop"] = buy_val
                                 user_states[CHAT_ID] = "waiting_for_sell_rise"
-                                send_telegram_message(f"✅ نسبة الهبوط للشراء: `{buy_val}%`.\n\nالآن أُكتبي **نسبة صعود البيع** (مثل: `2`):")
+                                send_telegram_message(f"✅ نسبة الهبوط للشراء: `{buy_val}%`.\n\nالآن أُكتبي **نسبة صعود البيع المستهدفة** (مثل: `10` لهدف الـ 22$):")
                             except ValueError:
                                 send_telegram_message("❌ الرجاء إدخال رقم صحيح:")
                         
@@ -127,6 +133,7 @@ def check_telegram_updates():
                                 buy_val = temp_coin_data["buy_drop"]
                                 
                                 tracked_symbols[symbol] = {"buy_drop": buy_val, "sell_rise": sell_val}
+                                notified_stages[symbol] = {"3": False, "6": False, "10": False}
                                 p, _ = get_market_data(symbol)
                                 base_prices[symbol] = p
                                 current_prices[symbol] = p
@@ -136,7 +143,7 @@ def check_telegram_updates():
                                     f"🎉 **تمت إضافة العملة بنجاح!**\n\n"
                                     f"• العملة: `{symbol}`\n"
                                     f"• تنبيه الشراء عند هبوط: `-{buy_val}%`\n"
-                                    f"• تنبيه البيع عند صعود: `+{sell_val}%`"
+                                    f"• تنبيهات الصعود التدريجية: (+3%، +6%、، والهدف النهائي +{sell_val}%)"
                                 )
                                 send_main_menu()
                             except ValueError:
@@ -159,6 +166,7 @@ def check_telegram_updates():
                                 buy_val = temp_coin_data["buy_drop"]
                                 
                                 tracked_symbols[symbol] = {"buy_drop": buy_val, "sell_rise": sell_val}
+                                notified_stages[symbol] = {"3": False, "6": False, "10": False}
                                 user_states[CHAT_ID] = None
                                 
                                 send_telegram_message(
@@ -212,7 +220,7 @@ def check_telegram_updates():
                                     f"• نسبة التغير (24 ساعة): {change_str}\n\n"
                                     f"🎯 **النسب المحددة للمراقبة:**\n"
                                     f"• تنبيه الشراء: `-{conf['buy_drop']}%`\n"
-                                    f"• تنبيه البيع: `+{conf['sell_rise']}%`"
+                                    f"• تنبيه البيع المستهدف: `+{conf['sell_rise']}%` (تدريجي: 3%، 6%، 10% أرباح الـ 22$)"
                                 )
                                 
                                 keyboard = {"inline_keyboard": [[{"text": "🔙 اختر عملة أخرى", "callback_data": "price_check_menu"}, {"text": "🏠 الرئيسية", "callback_data": "main_menu"}]]}
@@ -249,6 +257,8 @@ def check_telegram_updates():
                                     del base_prices[symbol]
                                 if symbol in current_prices:
                                     del current_prices[symbol]
+                                if symbol in notified_stages:
+                                    del notified_stages[symbol]
                                 send_telegram_message(f"🗑️ تم حذف العملة `{symbol}` بنجاح.")
                                 send_main_menu()
 
@@ -275,10 +285,10 @@ def send_main_menu():
 threading.Thread(target=check_telegram_updates, daemon=True).start()
 
 
-# --- 6. منطق المراقبة المستمرة ---
+# --- 6. منطق المراقبة المستمرة والتنبيهات التدريجية ---
 def monitor_binance_trading():
-    global base_prices, current_prices
-    print("Binance full-management strategy monitor started...")
+    global base_prices, current_prices, notified_stages
+    print("Binance full-management strategy monitor started with official 24h metrics & progressive alerts...")
     
     while True:
         current_symbols = list(tracked_symbols.keys())
@@ -297,37 +307,44 @@ def monitor_binance_trading():
                     continue
                 
                 base_price = base_prices[symbol]
-                config = tracked_symbols.get(symbol, {"buy_drop": 5.0, "sell_rise": 2.0})
+                config = tracked_symbols.get(symbol, {"buy_drop": 5.0, "sell_rise": 10.0})
                 
                 buy_drop_limit = config["buy_drop"]
-                sell_rise_limit = config["sell_rise"]
                 
-                # استخدام التغير اللحظي الداخلي لتنبيهات الشراء والبيع الخاصة بكِ
+                # حساب النسبة الداخلية بناءً على سعر الأساس للصفقة الحالية
                 internal_change_percent = ((current_price - base_price) / base_price) * 100
                 
+                # 1. تنبيه الشراء
                 if internal_change_percent <= -buy_drop_limit:
                     msg = (
                         f"🚨 **تنبيه شراء (فرصة دخول)**\n\n"
                         f"• العملة: `{symbol}`\n"
-                        f"• السعر السابق: `{base_price}`\n"
+                        f"• سعر الأساس: `{base_price}`\n"
                         f"• السعر الحالي: `{current_price}`\n"
                         f"• نسبة الهبوط: `{internal_change_percent:.2f}%` 🔻\n\n"
                         f"💡 وصلت للحد المستهدَف للشراء برأس مال 20$!"
                     )
                     send_telegram_message(msg)
                     base_prices[symbol] = current_price
+                    notified_stages[symbol] = {"3": False, "6": False, "10": False}
                 
-                elif internal_change_percent >= sell_rise_limit:
-                    msg = (
-                        f"💰 **تنبيه بيع / جني الأرباح**\n\n"
-                        f"• العملة: `{symbol}`\n"
-                        f"• سعر الشراء: `{base_price}`\n"
-                        f"• السعر الحالي: `{current_price}`\n"
-                        f"• نسبة الصعود: `+{internal_change_percent:.2f}%` 🚀\n\n"
-                        f"💡 تحققت نسبة الربح المستهدفة للوصول لهدف الـ 2$!"
-                    )
-                    send_telegram_message(msg)
-                    base_prices[symbol] = current_price
+                # 2. التنبيهات التدريجية المرحلية للصعود نحو الـ 22$ (هدف الـ 10%)
+                stages = [
+                    (3.0, "🌱 **تنبيه مرحلي (1/3): اقتراب الموجة!**\n\n• العملة: `{symbol}`\n• صعدت بنسبة: `+3%`\n• رأس مالك الحالي يقترب من `20.60$` 🚀"),
+                    (6.0, "📈 **تنبيه مرحلي (2/3): منتصف الطريق!**\n\n• العملة: `{symbol}`\n• صعدت بنسبة: `+6%`\n• رأس مالك الحالي يقترب من `21.20$` ✨"),
+                    (10.0, "💰 **تنبيه هدف البيع النهائي (3/3): حققنا الـ 22$!**\n\n• العملة: `{symbol}`\n• سعر الشراء: `{base_price}`\n• السعر الحالي: `{current_price}`\n• نسبة الصعود: `+{internal_change_percent:.2f}%` 🎉\n\n💡 **مبروك يا مهندسة! رأس مالك وصل الآن إلى 22 دولاراً، يمكنكِ البيع الآن لجني الأرباح!**")
+                ]
+                
+                for threshold, stage_text in stages:
+                    stage_key = str(int(threshold))
+                    if internal_change_percent >= threshold and not notified_stages[symbol][stage_key]:
+                        msg = stage_text.format(symbol=symbol, base_price=base_price, current_price=current_price, internal_change_percent=internal_change_percent)
+                        send_telegram_message(msg)
+                        notified_stages[symbol][stage_key] = True
+                        
+                        # إذا وصل للهدف النهائي (10%)، إعادة ضبط السعر الأساسي لبدء دورة جديدة
+                        if threshold == 10.0:
+                            base_prices[symbol] = current_price
                     
             except Exception as e:
                 print(f"Error checking {symbol}: {e}")
